@@ -9,6 +9,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 )
@@ -24,31 +25,24 @@ func fetch() (*html.Node, error) {
 	}
 
 	jar.SetCookies(randoUrl, []*http.Cookie{cookie})
-	client := &http.Client{Jar: jar}
 
-	postData := strings.NewReader("email=aiceru@gmail.com&member_num=12659&target=register.php")
+	client := &http.Client{
+		Jar: jar,
+	}
 
-	req, err := http.NewRequest("POST", "http://www.korearandonneurs.kr/reg/login_do.php", postData)
+	postData := url.Values{}
+	postData.Set("email", "aiceru@gmail.com")
+	postData.Set("member_num", "12659")
+	postData.Set("target", "register.php")
+
+	req, err := http.NewRequest("POST", "http://www.korearandonneurs.kr/reg/login_do.php", strings.NewReader(postData.Encode()))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	if err != nil {
 		log.Println(err)
 		return nil, err
 	}
-	//req.AddCookie(&cookie)
 
 	res, err := client.Do(req)
-	if err != nil {
-		log.Println(err)
-		return nil, err
-	}
-
-	req, err = http.NewRequest("GET", "http://www.korearandonneurs.kr/reg/register.php", nil)
-	if err != nil {
-		log.Println(err)
-		return nil, err
-	}
-	//req.AddCookie(&cookie)
-
-	res, err = client.Do(req)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -64,14 +58,25 @@ func fetch() (*html.Node, error) {
 }
 
 func parse(doc *html.Node) bool {
-	var f func(*html.Node)
-	f = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "img" {
-		}
-	}
-	f(doc)
+	var f func(*html.Node) bool
+	f = func(n *html.Node) bool {
+		if n.Type == html.TextNode && n.Data == "Busan 200K" {
+			eventNode := n.Parent.Parent.NextSibling.FirstChild
 
-	return false
+			if eventNode.Data == "div" && eventNode.Attr[0].Val == "event-descr" &&
+				strings.Contains(eventNode.FirstChild.Data, "Fee: Please refer to") {
+				fmt.Println(n.Data)
+				return true
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if f(c) {
+				return true
+			}
+		}
+		return false
+	}
+	return f(doc)
 }
 
 func renderNode(n *html.Node) string {
@@ -82,16 +87,16 @@ func renderNode(n *html.Node) string {
 }
 
 func main() {
+	for {
+		doc, err := fetch()
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
-	doc, err := fetch()
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	fmt.Println(renderNode(doc))
-
-	if parse(doc) == true {
-		fmt.Println("SEND MAIL")
+		if parse(doc) == true {
+			fmt.Println("SEND MAIL")
+		}
+		time.Sleep(2 * time.Second)
 	}
 }
