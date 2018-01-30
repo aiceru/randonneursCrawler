@@ -2,17 +2,19 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"golang.org/x/net/html"
 )
+
+var logger *log.Logger
 
 func fetch() (*html.Node, error) {
 	jar, _ := cookiejar.New(nil)
@@ -57,26 +59,40 @@ func fetch() (*html.Node, error) {
 	return doc, nil
 }
 
-func parse(doc *html.Node) bool {
-	var f func(*html.Node) bool
-	f = func(n *html.Node) bool {
-		if n.Type == html.TextNode && n.Data == "Busan 200K" {
-			eventNode := n.Parent.Parent.NextSibling.FirstChild
+type Brevet struct {
+	name  string
+	date  string
+	avail bool
+	mail  bool
+}
 
-			if eventNode.Data == "div" && eventNode.Attr[0].Val == "event-descr" &&
-				strings.Contains(eventNode.FirstChild.Data, "Fee: Please refer to") {
-				fmt.Println(n.Data)
-				return true
+var brevets []Brevet
+
+func parse(doc *html.Node) {
+	var f func(*html.Node)
+	f = func(n *html.Node) {
+		if n.Type == html.TextNode {
+			for i := range brevets {
+				brevet := &(brevets[i])
+				if n.Data == brevet.name && n.Parent.PrevSibling.FirstChild.Data == brevet.date {
+					eventNode := n.Parent.Parent.NextSibling.FirstChild
+
+					if eventNode.Data == "div" && eventNode.Attr[0].Val == "event-descr" &&
+						strings.Contains(eventNode.FirstChild.Data, "Fee: Please refer to") {
+						logger.Println(brevet.name + ".avail goes true")
+						brevet.avail = true
+					} else {
+						logger.Println(brevet.name + ".avail goes false")
+						brevet.avail = false
+					}
+				}
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			if f(c) {
-				return true
-			}
+			f(c)
 		}
-		return false
 	}
-	return f(doc)
+	f(doc)
 }
 
 func renderNode(n *html.Node) string {
@@ -87,6 +103,20 @@ func renderNode(n *html.Node) string {
 }
 
 func main() {
+	fpLog, err := os.OpenFile("rando_log.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer fpLog.Close()
+
+	logger = log.New(fpLog, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	brevets = []Brevet{
+		Brevet{"Seoul 200K", "10 Mar Sat", false, true},
+		Brevet{"Seoul 300K", "31 Mar Sat", false, true},
+		Brevet{"Seoul 400K", "21 Apr Sat", false, true},
+	}
+
 	for {
 		doc, err := fetch()
 		if err != nil {
@@ -94,9 +124,35 @@ func main() {
 			return
 		}
 
-		if parse(doc) == true {
-			fmt.Println("SEND MAIL")
+		parse(doc)
+		for i := range brevets {
+			brevet := &(brevets[i])
+			if brevet.avail {
+				if brevet.mail {
+					mail := Mail{
+						senderId: "js.pr.mailing",
+						toIds: []string{
+							"aiceru@gmail.com",
+							"whiteamin@gmail.com",
+							"dnjsdud0225@gmail.com",
+							"aquanuri@gmail.com",
+							"tlsrjsgk8987@naver.com",
+							"genisus@naver.com",
+						},
+						subject: "Randonneurs register Noti",
+						body: "Registering for randonnerus " + brevet.name + " at " + brevet.date + " is now available\n" +
+							"Go and register now : http://www.korearandonneurs.kr/reg/login.php?target=register.php",
+					}
+					SendMail(mail)
+					logger.Println("mail sended and " + brevet.name + ".mail goes false")
+					brevet.mail = false
+				}
+			} else {
+				logger.Println(brevet.name + ".mail goes true")
+				brevet.mail = true
+				logger.Println("Not found available event")
+			}
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 }
