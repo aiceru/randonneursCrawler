@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -16,26 +17,11 @@ import (
 
 var logger *log.Logger
 
-func fetch() (*html.Node, error) {
-	jar, _ := cookiejar.New(nil)
-	randoUrl, _ := url.Parse("http://www.korearandonneurs.kr")
-
-	cookie := &http.Cookie{
-		Name:     "myname",
-		Value:    "myvalue",
-		Unparsed: []string{"lang=ko", "PHPSESSID=u0jsf5rvmo6fcip9e1mkljq3h6"},
-	}
-
-	jar.SetCookies(randoUrl, []*http.Cookie{cookie})
-
-	client := &http.Client{
-		Jar: jar,
-	}
-
+func login(cli *http.Client) ([]*http.Cookie, error) {
 	postData := url.Values{}
 	postData.Set("email", "aiceru@gmail.com")
 	postData.Set("member_num", "12659")
-	postData.Set("target", "register.php")
+	//postData.Set("target", "register.php")
 
 	req, err := http.NewRequest("POST", "http://www.korearandonneurs.kr/reg/login_do.php", strings.NewReader(postData.Encode()))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -44,10 +30,47 @@ func fetch() (*html.Node, error) {
 		return nil, err
 	}
 
-	res, err := client.Do(req)
+	res, err := cli.Do(req)
+	for err != nil {
+		log.Println(err, ", retrying...")
+		time.Sleep(1 * time.Second)
+		res, err = cli.Do(req)
+	}
+
+	fmt.Println(res.Cookies())
+
+	return res.Cookies(), nil
+}
+
+func fetch() (*html.Node, error) {
+	jar, _ := cookiejar.New(nil)
+	randoUrl, _ := url.Parse("http://www.korearandonneurs.kr")
+
+	/*cookie := &http.Cookie{
+		//Name:  "myname",
+		//Value: "myvalue",
+		Unparsed: []string{"lang=en"},
+	}*/
+
+	client := &http.Client{
+		Jar: jar,
+	}
+
+	c, err := login(client)
+	jar.SetCookies(randoUrl, c)
+
+	req, err := http.NewRequest("GET", "http://www.korearandonneurs.kr/reg/register.php", nil)
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	if err != nil {
 		log.Println(err)
 		return nil, err
+	}
+
+	res, err := client.Do(req)
+	for err != nil {
+		log.Println(err, ", retrying...")
+		time.Sleep(1 * time.Second)
+		res, err = client.Do(req)
 	}
 
 	doc, err := html.Parse(res.Body)
@@ -117,14 +140,15 @@ func main() {
 		Brevet{"Seoul 400K", "21 Apr Sat", false, true},
 	}
 
-	for {
-		doc, err := fetch()
-		if err != nil {
-			log.Println(err)
-			return
-		}
+	//	for {
+	_, err = fetch()
+	//doc, err := fetch()
+	if err != nil {
+		log.Println(err)
+		return
+	}
 
-		parse(doc)
+	/*	parse(doc)
 		for i := range brevets {
 			brevet := &(brevets[i])
 			if brevet.avail {
@@ -153,6 +177,6 @@ func main() {
 				logger.Println("Not found available event")
 			}
 		}
-		time.Sleep(10 * time.Second)
-	}
+		time.Sleep(2 * time.Second)
+		}*/
 }
