@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -17,47 +16,42 @@ import (
 
 var logger *log.Logger
 
-func login(cli *http.Client) ([]*http.Cookie, error) {
+func login(cli *http.Client) {
 	postData := url.Values{}
 	postData.Set("email", "aiceru@gmail.com")
 	postData.Set("member_num", "12659")
-	//postData.Set("target", "register.php")
+	postData.Set("target", "register.php")
 
 	req, err := http.NewRequest("POST", "http://www.korearandonneurs.kr/reg/login_do.php", strings.NewReader(postData.Encode()))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return
 	}
 
-	res, err := cli.Do(req)
+	_, err = cli.Do(req)
 	for err != nil {
 		log.Println(err, ", retrying...")
 		time.Sleep(1 * time.Second)
-		res, err = cli.Do(req)
+		_, err = cli.Do(req)
 	}
-
-	fmt.Println(res.Cookies())
-
-	return res.Cookies(), nil
 }
 
 func fetch() (*html.Node, error) {
 	jar, _ := cookiejar.New(nil)
 	randoUrl, _ := url.Parse("http://www.korearandonneurs.kr")
 
-	/*cookie := &http.Cookie{
-		//Name:  "myname",
-		//Value: "myvalue",
-		Unparsed: []string{"lang=en"},
-	}*/
+	cookie := &http.Cookie{
+		Name:  "lang",
+		Value: "en",
+	}
 
 	client := &http.Client{
 		Jar: jar,
 	}
 
-	c, err := login(client)
-	jar.SetCookies(randoUrl, c)
+	jar.SetCookies(randoUrl, []*http.Cookie{cookie})
+	login(client)
 
 	req, err := http.NewRequest("GET", "http://www.korearandonneurs.kr/reg/register.php", nil)
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -140,15 +134,14 @@ func main() {
 		Brevet{"Seoul 400K", "21 Apr Sat", false, true},
 	}
 
-	//	for {
-	_, err = fetch()
-	//doc, err := fetch()
-	if err != nil {
-		log.Println(err)
-		return
-	}
+	for {
+		doc, err := fetch()
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
-	/*	parse(doc)
+		parse(doc)
 		for i := range brevets {
 			brevet := &(brevets[i])
 			if brevet.avail {
@@ -178,5 +171,5 @@ func main() {
 			}
 		}
 		time.Sleep(2 * time.Second)
-		}*/
+	}
 }
