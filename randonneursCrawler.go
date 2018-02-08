@@ -24,6 +24,7 @@ func login(cli *http.Client) {
 
 	req, err := http.NewRequest("POST", "http://www.korearandonneurs.kr/reg/login_do.php", strings.NewReader(postData.Encode()))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Connnection", "close")
 	if err != nil {
 		log.Println(err)
 		return
@@ -55,6 +56,7 @@ func fetch() (*html.Node, error) {
 
 	req, err := http.NewRequest("GET", "http://www.korearandonneurs.kr/reg/register.php", nil)
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Connection", "close")
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -66,6 +68,7 @@ func fetch() (*html.Node, error) {
 		time.Sleep(1 * time.Second)
 		res, err = client.Do(req)
 	}
+	defer res.Body.Close()
 
 	doc, err := html.Parse(res.Body)
 	if err != nil {
