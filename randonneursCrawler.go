@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -38,22 +39,29 @@ func login(cli *http.Client) {
 	}
 }
 
-func fetch() (*html.Node, error) {
-	jar, _ := cookiejar.New(nil)
-	randoUrl, _ := url.Parse("http://www.korearandonneurs.kr")
-
-	cookie := &http.Cookie{
-		Name:  "lang",
-		Value: "en",
+func register(cli *http.Client, bid string) {
+	postData := url.Values{}
+	postData.Set("event_id", bid)
+	req, err := http.NewRequest("POST", "http://www.korearandonneurs.kr/reg/event_apply.php", strings.NewReader(postData.Encode()))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Connection", "close")
+	if err != nil {
+		log.Println(err)
+		return
 	}
 
-	client := &http.Client{
-		Jar: jar,
+	res, err := cli.Do(req)
+	if err != nil {
+		log.Println(err)
+		return
 	}
+	defer res.Body.Close()
 
-	jar.SetCookies(randoUrl, []*http.Cookie{cookie})
-	login(client)
+	doc, err := html.Parse(res.Body)
+	fmt.Println(renderNode(doc))
+}
 
+func fetch(cli *http.Client) (*html.Node, error) {
 	req, err := http.NewRequest("GET", "http://www.korearandonneurs.kr/reg/register.php", nil)
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Connection", "close")
@@ -62,11 +70,11 @@ func fetch() (*html.Node, error) {
 		return nil, err
 	}
 
-	res, err := client.Do(req)
+	res, err := cli.Do(req)
 	for err != nil {
 		log.Println(err, ", retrying...")
 		time.Sleep(1 * time.Second)
-		res, err = client.Do(req)
+		res, err = cli.Do(req)
 	}
 	defer res.Body.Close()
 
@@ -88,31 +96,44 @@ type Brevet struct {
 
 var brevets []Brevet
 
-func parse(doc *html.Node) {
-	var f func(*html.Node)
-	f = func(n *html.Node) {
+func parse(doc *html.Node) (bool, string) {
+	var id string
+	var f func(*html.Node) (bool, string)
+	f = func(n *html.Node) (bool, string) {
 		if n.Type == html.TextNode {
 			for i := range brevets {
 				brevet := &(brevets[i])
-				if n.Data == brevet.name && n.Parent.PrevSibling.FirstChild.Data == brevet.date {
+				if n.Data == "Register" {
+					eventNode := n.Parent.Parent.PrevSibling
+					if eventNode.FirstChild.FirstChild.Data == brevet.date && eventNode.LastChild.FirstChild.Data == brevet.name {
+						id = n.Parent.Attr[1].Val
+						return true, id
+					}
+				}
+				/*if n.Data == brevet.name && n.Parent.PrevSibling.FirstChild.Data == brevet.date {
 					eventNode := n.Parent.Parent.NextSibling.FirstChild
 
 					if eventNode.Data == "div" && eventNode.Attr[0].Val == "event-descr" &&
 						strings.Contains(eventNode.FirstChild.Data, "Fee: Please refer to") {
+						//brevetId := eventNode.NextSibling.Attr[1].Val
+						fmt.Println(brevet.name)
 						logger.Println(brevet.name + ".avail goes true")
 						brevet.avail = true
 					} else {
 						logger.Println(brevet.name + ".avail goes false")
 						brevet.avail = false
 					}
-				}
+				}*/
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			f(c)
+			if success, id := f(c); success {
+				return true, id
+			}
 		}
+		return false, ""
 	}
-	f(doc)
+	return f(doc)
 }
 
 func renderNode(n *html.Node) string {
@@ -133,11 +154,43 @@ func main() {
 
 	brevets = []Brevet{
 		Brevet{"Seoul 200K", "10 Mar Sat", false, true},
-		Brevet{"Seoul 300K", "31 Mar Sat", false, true},
-		Brevet{"Seoul 400K", "21 Apr Sat", false, true},
+		//Brevet{"Seoul 300K", "31 Mar Sat", false, true},
+		//Brevet{"Seoul 400K", "21 Apr Sat", false, true},
+		//Brevet{"Busan 200K", "3 Mar Sat", false, true},
 	}
 
+	jar, _ := cookiejar.New(nil)
+	randoUrl, _ := url.Parse("http://www.korearandonneurs.kr")
+
+	cookie := &http.Cookie{
+		Name:  "lang",
+		Value: "en",
+	}
+
+	client := &http.Client{
+		Jar: jar,
+	}
+
+	jar.SetCookies(randoUrl, []*http.Cookie{cookie})
+
 	for {
+		login(client)
+
+		doc, err := fetch(client)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		if success, brevetId := parse(doc); success {
+			register(client, brevetId)
+			log.Println("successfully registered")
+			os.Exit(0)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	/*for {
 		doc, err := fetch()
 		if err != nil {
 			log.Println(err)
@@ -174,5 +227,5 @@ func main() {
 			}
 		}
 		time.Sleep(2 * time.Second)
-	}
+	}*/
 }
